@@ -1,0 +1,6 @@
+{
+  "name": "Equinox Mail",
+  "description": "Send cold email campaigns rotating between multiple authenticated Gmail accounts with intelligent rate limits and pacing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
