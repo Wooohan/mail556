@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "Fira Code", monospace;
+
+  /* Custom colors and gradients mapped */
+  --color-brand-start: #7C5CFC;
+  --color-brand-end: #9B7EFD;
+}
+
+body {
+  background-color: #FAFAFD;
+  color: #1F1B2D;
+  font-family: var(--font-sans);
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.bg-brand-gradient {
+  background: linear-gradient(135deg, #7C5CFC, #9B7EFD);
+}
+
+.text-brand-gradient {
+  background: linear-gradient(135deg, #7C5CFC, #9B7EFD);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Custom shadow */
+.card-shadow {
+  box-shadow: 0 4px 20px -2px rgba(124, 92, 252, 0.04), 0 2px 6px -1px rgba(124, 92, 252, 0.02);
+}
+
+.card-shadow-hover:hover {
+  box-shadow: 0 12px 30px -4px rgba(124, 92, 252, 0.08), 0 4px 12px -2px rgba(124, 92, 252, 0.04);
+}
