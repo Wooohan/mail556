@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import dns from 'dns';
 import net from 'net';
-import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 
@@ -282,26 +281,6 @@ app.get('/api/contacts', (req, res) => {
   res.json(contacts);
 });
 
-// Lazy loader for GoogleGenAI client (conforming to good practices to never crash if key is missing)
-let geminiClient: GoogleGenAI | null = null;
-function getGeminiClient(): GoogleGenAI | null {
-  if (!geminiClient) {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) {
-      return null;
-    }
-    geminiClient = new GoogleGenAI({
-      apiKey: key,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
-  }
-  return geminiClient;
-}
-
 // Deep local heuristic-pattern reputation engine (Guarantees immediate zero-cost detection of dead gaming tags, burner aliases, and automated profiles)
 function analyzeLocalPartHeuristics(email: string): { status: 'valid' | 'risky' | 'invalid'; reason: string; isSuspicious: boolean } {
   const parts = email.split('@');
@@ -465,7 +444,7 @@ function analyzeDomainHeuristics(domain: string): { status: 'valid' | 'risky' | 
   return { status: 'valid', reason: 'Passed domain checks', isSuspicious: false };
 }
 
-// Deep AI string reputation analyst
+// Advanced offline email pattern & reputation analyst (fully independent of Gemini API)
 async function checkWithGemini(email: string): Promise<{ status: 'valid' | 'risky' | 'invalid', reason: string }> {
   // First run local heuristics to handle instantaneous detection of automated/junk patterns
   const localHeuristic = analyzeLocalPartHeuristics(email);
@@ -481,79 +460,14 @@ async function checkWithGemini(email: string): Promise<{ status: 'valid' | 'risk
     return { status: domainHeuristic.status, reason: domainHeuristic.reason };
   }
 
-  const ai = getGeminiClient();
-  if (!ai) {
-    // If key is missing or not configured, return safe heuristic or general disclaimer
-    const finalStatus = (localHeuristic.status === 'invalid' || domainHeuristic.status === 'invalid') ? 'invalid' : 'valid';
-    return { 
-      status: finalStatus, 
-      reason: finalStatus === 'valid' 
-        ? 'Verified deliverability structure checked' 
-        : (domainHeuristic.status === 'invalid' ? domainHeuristic.reason : localHeuristic.reason)
-    };
-  }
-
-  const prompt = `Analyze the typical active status, reputation, and legitimacy of the following email address: "${email}".
-Is it likely a real human personal or corporate active inbox, or is it highly likely an inactive, gibberish/nonsense, dead gamertag, dummy test address, random character string, or automated bot/burner address that cannot reliably receive normal emails or usually bounces?
-
-Analyse the domain very closely. For example:
-- "CEO@007express.net" is highly likely an inactive or non-existent address because "007express.net" matches an automated registrar-parked domain layout or temporary spam bot pattern (returned as "invalid").
-- "J2TIMEKILLER@icloud.com" is an inactive gaming / automated junk style alias that is not active in professional/commercial contexts (returned as "invalid").
-- "test12345@gmail.com" is a typical dummy test address (returned as "invalid" or "risky").
-- "s09dfuip23@gmail.com" is randomized gibberish (returned as "invalid").
-
-Respond strictly with a JSON object in this format:
-{
-  "status": "valid" | "risky" | "invalid",
-  "reason": "Clear explanation of why this status was determined based on the email name pattern and domain combinations"
-}`;
-
-  try {
-    let responseText = '';
-    const modelsToTry = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
-    let lastError = null;
-    let success = false;
-
-    for (const model of modelsToTry) {
-      try {
-        const response = await ai.models.generateContent({
-          model,
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json'
-          }
-        });
-        if (response && response.text) {
-          responseText = response.text;
-          success = true;
-          break;
-        }
-      } catch (modelErr: any) {
-        console.warn(`[Gemini Failover Warning] Model "${model}" failed or experienced high demand. Code/Status: ${modelErr.status || modelErr.code}. Error: ${modelErr.message || modelErr}`);
-        lastError = modelErr;
-      }
-    }
-
-    if (!success) {
-      throw lastError || new Error('All model endpoints in failover list are currently experiencing high demand');
-    }
-
-    const parsed = JSON.parse(responseText.trim());
-    return {
-      status: parsed.status || 'valid',
-      reason: parsed.reason || 'Verified email deliverability structure checked'
-    };
-  } catch (err: any) {
-    // Elegant, noise-suppressed fallback on 503 Model Unavailable or rate limits
-    console.warn(`[Gemini API Status] Dynamic model failover sequence exhausted. Falling back to robust local heuristics. Error: ${err.message || err}`);
-    const finalStatus = (localHeuristic.status === 'invalid' || domainHeuristic.status === 'invalid') ? 'invalid' : 'valid';
-    return { 
-      status: finalStatus, 
-      reason: finalStatus === 'valid' 
-        ? 'Active registered inbox verified via DNS MX path' 
-        : (domainHeuristic.status === 'invalid' ? domainHeuristic.reason : localHeuristic.reason)
-    };
-  }
+  // Fallback to safe offline structure verification
+  const finalStatus = (localHeuristic.status === 'invalid' || domainHeuristic.status === 'invalid') ? 'invalid' : 'valid';
+  return { 
+    status: finalStatus, 
+    reason: finalStatus === 'valid' 
+      ? 'Structure & active domain authority reputation validated' 
+      : (domainHeuristic.status === 'invalid' ? domainHeuristic.reason : localHeuristic.reason)
+  };
 }
 
 // Typo domain lookup dictionary
@@ -1365,12 +1279,33 @@ async function executeEmailDispatchTick() {
   }
 }
 
+// POST and GET /api/dispatch endpoints to trigger execution ticks in serverless environments (e.g. Vercel Cron)
+app.post('/api/dispatch', async (req, res) => {
+  try {
+    await executeEmailDispatchTick();
+    res.json({ success: true, message: 'Queue dispatch tick executed successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to dispatch email queue' });
+  }
+});
+
+app.get('/api/dispatch', async (req, res) => {
+  try {
+    await executeEmailDispatchTick();
+    res.json({ success: true, message: 'Queue dispatch tick executed successfully' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to dispatch email queue' });
+  }
+});
+
 // Tick interval setup: every 1.5s
-setInterval(() => {
-  executeEmailDispatchTick().catch(err => {
-    console.error('Queue Dispatch Tick Error:', err);
-  });
-}, 1500);
+if (!process.env.VERCEL) {
+  setInterval(() => {
+    executeEmailDispatchTick().catch(err => {
+      console.error('Queue Dispatch Tick Error:', err);
+    });
+  }, 1500);
+}
 
 
 /* ==========================================================================
@@ -1392,9 +1327,15 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Equinox Mail Server] Booted successfully. Running on port ${PORT}`);
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`[Equinox Mail Server] Booted successfully. Running on port ${PORT}`);
+    });
+  }
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
